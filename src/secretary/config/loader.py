@@ -36,5 +36,8 @@ def load_config() -> SecretaryConfig:
         twilio_from_number=os.environ.get("TWILIO_FROM_NUMBER", ""),
         sendgrid_api_key=os.environ.get("SENDGRID_API_KEY", ""),
         sendgrid_from_email=os.environ.get("SENDGRID_FROM_EMAIL", ""),
+        google_maps_api_key=os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+        canvas_api_token=os.environ.get("CANVAS_API_TOKEN", ""),
+        canvas_base_url=os.environ.get("CANVAS_BASE_URL", ""),
         env=env,
     )

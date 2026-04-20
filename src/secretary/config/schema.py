@@ -25,6 +25,9 @@ class SecretaryConfig:
     twilio_from_number: str = ""
     sendgrid_api_key: str = ""
     sendgrid_from_email: str = ""
+    google_maps_api_key: str = ""
+    canvas_api_token: str = ""
+    canvas_base_url: str = ""
     env: dict[str, str] = field(default_factory=dict)
 
     def merged_env(self) -> dict[str, str]:
@@ -44,4 +47,10 @@ class SecretaryConfig:
             merged["SENDGRID_API_KEY"] = self.sendgrid_api_key
         if self.sendgrid_from_email:
             merged["SENDGRID_FROM_EMAIL"] = self.sendgrid_from_email
+        if self.google_maps_api_key:
+            merged["GOOGLE_MAPS_API_KEY"] = self.google_maps_api_key
+        if self.canvas_api_token:
+            merged["CANVAS_API_TOKEN"] = self.canvas_api_token
+        if self.canvas_base_url:
+            merged["CANVAS_BASE_URL"] = self.canvas_base_url
         return merged
