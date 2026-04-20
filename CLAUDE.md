@@ -8,7 +8,7 @@ AI secretary for Michelle. Fetches Google Calendar events (and Canvas LMS assign
 - Gemini 2.5 Flash (free tier, `google-genai` SDK) -- originally Anthropic/Opus, swapped for $0 cost
 - Google Calendar API (OAuth 2.0)
 - Google Maps API (drive time estimates)
-- Gmail SMTP delivery (active channel)
+- Gmail SMTP delivery with IMAP auto-cleanup (active channel, `REMINDER_TTL_HOURS` controls cleanup window)
 - Flask + Gunicorn on Cloud Run
 - Cloud Tasks for timed reminder delivery
 - Cloud Scheduler for triggering pipeline runs
@@ -34,7 +34,7 @@ AI secretary for Michelle. Fetches Google Calendar events (and Canvas LMS assign
 - `src/secretary/plugin/base.py` -- plugin ABCs
 - `src/secretary/plugin/loader.py` -- plugin discovery (walks `plugins/` dir)
 - `src/secretary/config/loader.py` -- config loading from `.env` and env vars
-- `src/secretary/dedup.py` -- SQLite deduplication store
+- `src/secretary/dedup/` -- SQLite deduplication store (`store.py`) and fingerprint hashing (`hasher.py`)
 - `Dockerfile` -- production image
 
 ## Development commands
@@ -84,10 +84,10 @@ Four plugin types (defined in `src/secretary/plugin/base.py`):
 |------|---------|---------|
 | `DataSource` | Fetch events from external services | `google_calendar.py`, `canvas_lms.py` |
 | `Tool` | Provide tools Gemini can call during analysis | `google_maps.py` |
-| `Delivery` | Send reminders to the user | `gmail_delivery.py`, `twilio_sms.py` |
+| `Delivery` | Send reminders to the user | `gmail_delivery.py` (active), `twilio_sms.py`, `sendgrid_email.py`, `sms_gateway.py` |
 | `Hook` | Transform data before/after the agent runs | (none currently) |
 
-Each plugin has a `name` attribute and an `enabled(env)` classmethod that checks whether required config is present. Plugins auto-skip when unconfigured.
+Each plugin declares a `config_schema` list of `ConfigRequirement` objects. The registry validates required keys are present during registration. Plugins auto-skip when unconfigured.
 
 ## Pipeline flow
 
@@ -97,4 +97,5 @@ Each plugin has a `name` attribute and an `enabled(env)` classmethod that checks
 4. Gemini may call tools (e.g. Google Maps for drive time) -- up to 10 rounds
 5. Parse structured JSON response into `Reminder` and `Conflict` objects
 6. Run `post_agent` hooks
-7. Deliver via `Delivery` plugins (with SQLite dedup) or schedule via Cloud Tasks
+7. Deliver via `Delivery` plugins (with SQLite dedup) or schedule via Cloud Tasks at each reminder's `remind_at` time
+   - Gmail delivery auto-cleans old reminder emails from inbox via IMAP before sending new ones

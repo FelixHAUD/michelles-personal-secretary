@@ -1,8 +1,8 @@
 # Michelle's Personal Secretary
 
-AI-powered personal secretary that fetches events from Google Calendar and Canvas LMS, analyzes them with Gemini, and sends smart reminders via SMS and email.
+AI-powered personal secretary that fetches events from Google Calendar and Canvas LMS, analyzes them with Gemini, and sends smart reminders via Gmail.
 
-**How it works:** fetch events → Gemini analyzes with tool-use (e.g. Google Maps drive time) → generates prioritized reminders → delivers via Twilio SMS / SendGrid email.
+**How it works:** fetch events → Gemini analyzes with tool-use (e.g. Google Maps drive time) → generates prioritized reminders → delivers via Gmail with timed Cloud Tasks delivery and IMAP auto-cleanup.
 
 ## Prerequisites
 
@@ -23,8 +23,8 @@ Optional integrations (the app works without these — plugins auto-skip if unco
 ## Quick Start
 
 ```bash
-git clone <repo-url>
-cd michelles_personal_secretary
+git clone https://github.com/FelixHAUD/michelles-personal-secretary.git
+cd michelles-personal-secretary
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 secretary setup
@@ -58,17 +58,18 @@ All settings live in `.env` (created by `secretary setup`, or copy `.env.example
 | `EMAIL` | No | — | Email for email reminders |
 | `TIMEZONE` | No | `America/Los_Angeles` | Scheduling timezone |
 | `SCHEDULE_CRON` | No | `0 6 * * *` | Cron expression (default: 6 AM daily) |
-| `LOOKAHEAD_HOURS` | No | `72` | How far ahead to scan for events |
+| `LOOKAHEAD_HOURS` | No | `6` | How far ahead to scan for events (hours) |
 | `TWILIO_ACCOUNT_SID` | No | — | Twilio SMS |
 | `TWILIO_AUTH_TOKEN` | No | — | Twilio SMS |
 | `TWILIO_FROM_NUMBER` | No | — | Twilio SMS |
 | `SENDGRID_API_KEY` | No | — | SendGrid email |
 | `SENDGRID_FROM_EMAIL` | No | — | SendGrid email |
-| `SMS_GATEWAY_DOMAIN` | No | — | SMS gateway carrier domain (e.g. `txt.att.net`) |
-| `SMTP_HOST` | No | — | SMTP server for SMS gateway (e.g. `smtp.gmail.com`) |
-| `SMTP_PORT` | No | — | SMTP port for SMS gateway (e.g. `587`) |
-| `SMTP_USER` | No | — | SMTP username for SMS gateway |
-| `SMTP_PASSWORD` | No | — | SMTP password for SMS gateway |
+| `SMTP_HOST` | No | — | SMTP server (e.g. `smtp.gmail.com`) |
+| `SMTP_PORT` | No | — | SMTP port (e.g. `587`) |
+| `SMTP_USER` | No | — | SMTP username (Gmail address) |
+| `SMTP_PASSWORD` | No | — | SMTP password (Gmail app password) |
+| `REMINDER_TTL_HOURS` | No | `2` | Hours before old reminder emails are auto-deleted from inbox |
+| `SMS_GATEWAY_DOMAIN` | No | — | SMS gateway carrier domain (e.g. `txt.att.net`) — deprecated |
 | `GOOGLE_MAPS_API_KEY` | No | — | Google Maps drive time |
 | `CANVAS_API_TOKEN` | No | — | Canvas LMS |
 | `CANVAS_BASE_URL` | No | — | Canvas LMS (e.g. `https://canvas.university.edu`) |
@@ -80,9 +81,10 @@ The app uses a plugin system. Drop a `.py` file in `plugins/` and it auto-regist
 - `google_calendar.py` — DataSource: fetches calendar events
 - `canvas_lms.py` — DataSource: fetches assignment deadlines
 - `google_maps.py` — Tool: drive time estimates (called by Gemini during analysis)
+- `gmail_delivery.py` — Delivery: sends email reminders via Gmail SMTP with IMAP auto-cleanup
 - `twilio_sms.py` — Delivery: sends SMS reminders
-- `sms_gateway.py` — Delivery: free SMS via email-to-SMS carrier gateway
-- `sendgrid_email.py` — Delivery: sends email reminders
+- `sms_gateway.py` — Delivery: free SMS via email-to-SMS carrier gateway (deprecated)
+- `sendgrid_email.py` — Delivery: sends email reminders via SendGrid
 
 Four plugin types are available (see `src/secretary/plugin/base.py`):
 
