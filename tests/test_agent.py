@@ -3,13 +3,13 @@
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from secretary.agent import _format_events, _parse_response, generate_reminders
-from secretary.models import Event
+from secretary.agent import Event, format_events, generate_reminders
+from secretary.agent.loop import _parse_response
 
 
 class TestFormatEvents:
     def test_formats_multiple_events(self, sample_events):
-        result = _format_events(sample_events)
+        result = format_events(sample_events)
 
         assert "3 total" in result
         assert "Team Standup" in result
@@ -19,7 +19,7 @@ class TestFormatEvents:
         assert "456 Oak Ave" in result
 
     def test_formats_empty_list(self):
-        result = _format_events([])
+        result = format_events([])
         assert "No upcoming events" in result
 
     def test_truncates_long_descriptions(self):
@@ -31,28 +31,27 @@ class TestFormatEvents:
             description="x" * 1000,
             source="test",
         )
-        result = _format_events([event])
-        # Description should be truncated to 500 chars
+        result = format_events([event])
         assert len(result) < 1000
 
 
 class TestParseResponse:
     def test_parses_valid_json(self, mock_agent_json_response):
-        reminders, conflicts = _parse_response(mock_agent_json_response)
+        output = _parse_response(mock_agent_json_response)
 
-        assert len(reminders) == 3
-        assert reminders[0].event_id == "evt_001"
-        assert reminders[0].event_title == "Team Standup"
-        assert "zoom.us" in reminders[0].message
-        assert reminders[1].priority == "high"
-        assert reminders[2].remind_at.hour == 5
-        assert conflicts == []
+        assert len(output.reminders) == 3
+        assert output.reminders[0].event_id == "evt_001"
+        assert output.reminders[0].event_title == "Team Standup"
+        assert "zoom.us" in output.reminders[0].message
+        assert output.reminders[1].priority == "high"
+        assert output.reminders[2].remind_at.hour == 5
+        assert output.conflicts == []
 
     def test_parses_json_wrapped_in_code_fences(self):
         wrapped = '```json\n{"reminders": [], "conflicts": []}\n```'
-        reminders, conflicts = _parse_response(wrapped)
-        assert reminders == []
-        assert conflicts == []
+        output = _parse_response(wrapped)
+        assert output.reminders == []
+        assert output.conflicts == []
 
     def test_parses_conflicts(self):
         response = '''{
@@ -64,10 +63,10 @@ class TestParseResponse:
                 }
             ]
         }'''
-        reminders, conflicts = _parse_response(response)
-        assert len(conflicts) == 1
-        assert "evt_001" in conflicts[0].event_ids
-        assert "overlap" in conflicts[0].description
+        output = _parse_response(response)
+        assert len(output.conflicts) == 1
+        assert "evt_001" in output.conflicts[0].event_ids
+        assert "overlap" in output.conflicts[0].description
 
     def test_handles_missing_optional_fields(self):
         response = '''{
@@ -81,12 +80,12 @@ class TestParseResponse:
             ],
             "conflicts": []
         }'''
-        reminders, _ = _parse_response(response)
-        assert reminders[0].priority == "normal"
+        output = _parse_response(response)
+        assert output.reminders[0].priority == "normal"
 
 
 class TestGenerateReminders:
-    @patch("secretary.agent.genai.Client")
+    @patch("secretary.agent.loop.genai.Client")
     def test_sends_all_events_in_single_call(self, mock_client_cls, sample_events):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
@@ -95,7 +94,7 @@ class TestGenerateReminders:
         mock_response.text = '{"reminders": [], "conflicts": []}'
         mock_client.models.generate_content.return_value = mock_response
 
-        reminders, conflicts = generate_reminders(
+        output = generate_reminders(
             events=sample_events,
             api_key="fake-key",
             home_address="123 Main St",
@@ -115,7 +114,7 @@ class TestGenerateReminders:
         config = call_args.kwargs["config"]
         assert "123 Main St" in config.system_instruction
 
-    @patch("secretary.agent.genai.Client")
+    @patch("secretary.agent.loop.genai.Client")
     def test_uses_correct_model(self, mock_client_cls, sample_events):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client

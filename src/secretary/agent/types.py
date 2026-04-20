@@ -1,4 +1,4 @@
-"""Data models for events and reminders."""
+"""Data models for events, reminders, and agent output."""
 
 from __future__ import annotations
 
@@ -16,23 +16,20 @@ class Event:
     end: datetime
     location: str = ""
     description: str = ""
-    source: str = ""  # e.g. "google_calendar", "canvas", "zoom"
+    source: str = ""
     raw: dict = field(default_factory=dict)
 
     def is_zoom(self) -> bool:
-        """Check if this is a Zoom meeting."""
         indicators = ["zoom.us", "zoom meeting"]
         text = f"{self.location} {self.description} {self.title}".lower()
         return any(ind in text for ind in indicators)
 
     def has_physical_location(self) -> bool:
-        """Check if this event has a physical address (not a URL)."""
         if not self.location:
             return False
         return not self.location.startswith(("http://", "https://"))
 
     def is_early_morning(self) -> bool:
-        """Check if event starts before 9 AM."""
         return self.start.hour < 9
 
 
@@ -44,7 +41,7 @@ class Reminder:
     event_title: str
     remind_at: datetime
     message: str
-    priority: str = "normal"  # "high", "normal", "low"
+    priority: str = "normal"
     channels: list[str] = field(default_factory=lambda: ["console"])
 
 
@@ -54,3 +51,11 @@ class Conflict:
 
     event_ids: list[str]
     description: str
+
+
+@dataclass
+class AgentOutput:
+    """The full output from the agent."""
+
+    reminders: list[Reminder]
+    conflicts: list[Conflict]

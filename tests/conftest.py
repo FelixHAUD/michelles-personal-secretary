@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from secretary.models import Event
+from secretary.agent import Event
 
 
 @pytest.fixture
@@ -71,7 +71,7 @@ def mock_calendar_response():
 
 @pytest.fixture
 def mock_agent_json_response():
-    """A valid JSON response from Claude for testing parsing."""
+    """A valid JSON response from Gemini for testing parsing."""
     return '''{
   "reminders": [
     {
