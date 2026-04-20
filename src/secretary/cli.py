@@ -24,6 +24,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     sub.add_parser("dry-run", help="Preview reminders without sending")
     sub.add_parser("test-plugins", help="Validate all loaded plugins")
+    sub.add_parser("setup", help="Interactive setup wizard")
 
     return parser.parse_args(argv)
 
@@ -34,6 +35,12 @@ def main(argv: list[str] | None = None) -> None:
 
     # Default to dry-run if no command specified
     command = args.command or "dry-run"
+
+    if command == "setup":
+        from .config.wizard import run_wizard
+
+        run_wizard()
+        return
 
     config = load_config()
 
@@ -56,12 +63,17 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if command in ("run", "dry-run"):
-        from .pipeline.runner import run_pipeline
-
-        dry_run = command == "dry-run"
         if not registry.data_sources:
             print("Error: No data source plugins loaded. Check your configuration.")
             sys.exit(1)
 
-        print("Fetching events...")
-        run_pipeline(config=config, registry=registry, dry_run=dry_run)
+        if command == "run" and not args.once:
+            from .pipeline.scheduler import start_scheduler
+
+            start_scheduler(config=config, registry=registry)
+        else:
+            from .pipeline.runner import run_pipeline
+
+            dry_run = command == "dry-run"
+            print("Fetching events...")
+            run_pipeline(config=config, registry=registry, dry_run=dry_run)

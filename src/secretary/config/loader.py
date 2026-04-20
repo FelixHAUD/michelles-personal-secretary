@@ -27,6 +27,7 @@ def load_config() -> SecretaryConfig:
             phone_number=os.environ.get("PHONE_NUMBER", ""),
             email=os.environ.get("EMAIL", ""),
             timezone=os.environ.get("TIMEZONE", "America/Los_Angeles"),
+            schedule_cron=os.environ.get("SCHEDULE_CRON", "0 6 * * *"),
             lookahead_hours=int(os.environ.get("LOOKAHEAD_HOURS", "48")),
         ),
         gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
