@@ -95,6 +95,48 @@ Four plugin types are available (see `src/secretary/plugin/base.py`):
 
 ## Scheduling
 
-`secretary run` starts a long-running process that fires the pipeline on a cron schedule. The machine must be on and the process running for reminders to fire. If the machine sleeps or shuts down, scheduled runs are missed.
+`secretary run` starts a long-running process that fires the pipeline on a cron schedule. The machine must be on and the process running for reminders to fire. If the machine sleeps or shuts down, scheduled runs are missed. This still works for local development and testing.
 
-For always-on reliability, deploy to a cloud VM or serverless function.
+For always-on reliability, use the Cloud Run deployment (see below).
+
+## Cloud Deployment
+
+Deployed to **Google Cloud Run** with timed reminder delivery via Cloud Tasks.
+
+| Resource | Value |
+|----------|-------|
+| Service URL | `https://secretary-1070885118078.us-central1.run.app` |
+| GCP project | `gen-lang-client-0243595792` |
+| Region | `us-central1` |
+| Cloud Scheduler job | `secretary-trigger` — POSTs to `/run` every 6 hours (midnight, 6 AM, noon, 6 PM PT) |
+| Cloud Tasks queue | `reminder-delivery` |
+
+### Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/run` | Full pipeline: fetch events → Gemini analysis → schedule Cloud Tasks at each reminder's `remind_at` time |
+| `POST` | `/deliver` | Deliver a single reminder (called by Cloud Tasks at the scheduled time) |
+| `GET` | `/health` | Health check |
+
+### How timed delivery works
+
+`/run` analyzes upcoming events with Gemini, which decides when each reminder should fire (e.g., 30 min before class, drive-time minus buffer before work). For each reminder, a Cloud Task is scheduled at that `remind_at` time. When the task fires, it POSTs to `/deliver` to send the actual email.
+
+### Security and secrets
+
+- IAM-secured: `--no-allow-unauthenticated`, OIDC auth via `scheduler-invoker` service account
+- Secrets (`credentials.json`, `token.json`) stored in **Secret Manager**, passed as env vars
+- All other config passed as Cloud Run env vars
+
+### Cloud-specific env vars
+
+| Variable | Purpose |
+|----------|---------|
+| `PLUGINS_DIR` | Plugin discovery path (set to `/app/plugins` in Docker) |
+| `GOOGLE_TOKEN_PATH` | OAuth token path (cloud writes secret to `/tmp/secrets/token.json`) |
+
+### Notes
+
+- Gemini retry delay capped at 30s (Cloud Run has 300s request timeout)
+- Cloud Scheduler and Cloud Tasks both use OIDC tokens from the `scheduler-invoker` service account

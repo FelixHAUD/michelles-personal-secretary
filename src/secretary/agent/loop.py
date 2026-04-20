@@ -99,10 +99,11 @@ def generate_reminders(
     raise last_error
 
 
-def _parse_retry_delay(err_str: str) -> int:
-    """Extract retry delay from error message, default 60s."""
+def _parse_retry_delay(err_str: str, max_delay: int = 30) -> int:
+    """Extract retry delay from error message, default 60s, capped for Cloud Run."""
     match = re.search(r"retry in (\d+)", err_str, re.IGNORECASE)
-    return int(match.group(1)) if match else 60
+    delay = int(match.group(1)) if match else 60
+    return min(delay, max_delay)
 
 
 def _single_call(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -15,7 +16,7 @@ from googleapiclient.discovery import build
 from secretary.plugin import ConfigRequirement, DataSource
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
-TOKEN_PATH = Path.home() / ".secretary" / "token.json"
+TOKEN_PATH = Path(os.environ.get("GOOGLE_TOKEN_PATH", str(Path.home() / ".secretary" / "token.json")))
 
 
 class GoogleCalendarSource(DataSource):

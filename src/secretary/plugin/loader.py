@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import logging
+import os
 from pathlib import Path
 
 from .base import BasePlugin, DataSource, Delivery, Hook, Tool
@@ -22,8 +23,12 @@ def discover_plugins(plugins_dir: Path | None = None) -> list[type[BasePlugin]]:
     other plugins from loading.
     """
     if plugins_dir is None:
-        # Default: plugins/ directory at the project root
-        plugins_dir = Path(__file__).resolve().parent.parent.parent.parent / "plugins"
+        env_dir = os.environ.get("PLUGINS_DIR")
+        if env_dir:
+            plugins_dir = Path(env_dir)
+        else:
+            # Default: plugins/ directory at the project root
+            plugins_dir = Path(__file__).resolve().parent.parent.parent.parent / "plugins"
 
     if not plugins_dir.is_dir():
         logger.info("No plugins directory found at %s", plugins_dir)
