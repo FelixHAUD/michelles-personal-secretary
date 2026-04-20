@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -66,25 +68,41 @@ def generate_reminders(
         if gemini_tools is not None:
             dispatch = build_tool_dispatch(registry)
 
-    # Try primary model, fall back if overloaded
+    # Try primary model, fall back if overloaded, retry on rate limit
     models = ["gemini-2.5-flash", "gemini-2.0-flash"]
     last_error = None
     for model in models:
-        try:
-            if gemini_tools is not None:
-                return _tool_use_loop(
-                    client, model, system, user_message, gemini_tools, dispatch,
-                )
-            else:
-                return _single_call(client, model, system, user_message)
-        except Exception as e:
-            last_error = e
-            if "503" in str(e) or "UNAVAILABLE" in str(e):
-                logger.warning("%s is overloaded, trying next model...", model)
-                continue
-            raise
+        for attempt in range(3):
+            try:
+                if gemini_tools is not None:
+                    return _tool_use_loop(
+                        client, model, system, user_message, gemini_tools, dispatch,
+                    )
+                else:
+                    return _single_call(client, model, system, user_message)
+            except Exception as e:
+                last_error = e
+                err_str = str(e)
+                if "503" in err_str or "UNAVAILABLE" in err_str:
+                    logger.warning("%s is overloaded, trying next model...", model)
+                    break  # try next model
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    wait = _parse_retry_delay(err_str)
+                    logger.warning(
+                        "%s rate limited (attempt %d/3), waiting %ds...",
+                        model, attempt + 1, wait,
+                    )
+                    time.sleep(wait)
+                    continue  # retry same model
+                raise
 
     raise last_error
+
+
+def _parse_retry_delay(err_str: str) -> int:
+    """Extract retry delay from error message, default 60s."""
+    match = re.search(r"retry in (\d+)", err_str, re.IGNORECASE)
+    return int(match.group(1)) if match else 60
 
 
 def _single_call(
@@ -171,8 +189,11 @@ def _tool_use_loop(
     return _parse_response(response.text)
 
 
-def _parse_response(text: str) -> AgentOutput:
+def _parse_response(text: str | None) -> AgentOutput:
     """Parse the model's JSON response into an AgentOutput."""
+    if not text or not text.strip():
+        logger.warning("Empty response from model, returning no reminders")
+        return AgentOutput(reminders=[], conflicts=[])
     cleaned = text.strip()
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")

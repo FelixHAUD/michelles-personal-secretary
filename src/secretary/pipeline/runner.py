@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from secretary.agent import Event, generate_reminders
+from secretary.agent.types import AgentOutput, Reminder
 from secretary.config import SecretaryConfig
 from secretary.dedup import DedupStore, reminder_fingerprint
 from secretary.plugin import PluginRegistry
@@ -17,8 +18,12 @@ def run_pipeline(
     config: SecretaryConfig,
     registry: PluginRegistry,
     dry_run: bool = False,
-) -> None:
-    """Run the full pipeline: fetch -> agent -> print/deliver."""
+) -> AgentOutput:
+    """Run the full pipeline: fetch -> agent -> print/deliver.
+
+    Returns the AgentOutput so callers (e.g. the scheduler) can schedule
+    individual reminder deliveries at their remind_at times.
+    """
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(hours=config.user.lookahead_hours)
@@ -46,9 +51,11 @@ def run_pipeline(
 
     print(f"Found {len(all_events)} upcoming events.\n")
 
+    empty = AgentOutput(reminders=[], conflicts=[])
+
     if not all_events:
-        print("No events in the next 48 hours. Nothing to do.")
-        return
+        print(f"No events in the next {config.user.lookahead_hours} hours. Nothing to do.")
+        return empty
 
     # Step 2: Show what we fetched
     for event in all_events:
@@ -81,6 +88,59 @@ def run_pipeline(
             logger.error("Post-agent hook %s failed: %s", hook.name, e)
 
     # Step 6: Print results
+    _print_output(output)
+
+    # Step 7: Deliver with dedup (only for immediate delivery modes)
+    if not dry_run and registry.deliveries:
+        for r in output.reminders:
+            deliver_reminder(config, registry, r)
+
+    return output
+
+
+def deliver_reminder(
+    config: SecretaryConfig,
+    registry: PluginRegistry,
+    reminder: Reminder,
+) -> None:
+    """Deliver a single reminder through all configured delivery channels."""
+    dedup = DedupStore()
+    remind_at_iso = reminder.remind_at.isoformat()
+
+    for delivery in registry.deliveries:
+        fp = reminder_fingerprint(reminder.event_id, remind_at_iso, delivery.name)
+        if dedup.was_sent(fp):
+            logger.info(
+                "Skipping duplicate: %s via %s", reminder.event_title, delivery.name
+            )
+            continue
+        try:
+            recipient = (
+                config.user.phone_number
+                if delivery.name in ("sms", "sms_gateway")
+                else config.user.email
+            )
+            success = delivery.send(
+                recipient=recipient,
+                subject=f"Reminder: {reminder.event_title}",
+                body=reminder.message,
+            )
+            if success:
+                dedup.mark_sent(
+                    fp, reminder.event_id, remind_at_iso, delivery.name, reminder.message
+                )
+                logger.info(
+                    "Delivered: %s via %s", reminder.event_title, delivery.name
+                )
+        except Exception as e:
+            logger.error("Delivery %s failed: %s", delivery.name, e)
+
+    dedup.cleanup_old()
+    dedup.close()
+
+
+def _print_output(output: AgentOutput) -> None:
+    """Print reminders and conflicts to console."""
     if output.reminders:
         print(f"\n{'='*60}")
         print(f"  REMINDERS ({len(output.reminders)})")
@@ -102,31 +162,3 @@ def run_pipeline(
 
     if not output.reminders and not output.conflicts:
         print("\nNo reminders or conflicts to report.")
-
-    # Step 7: Deliver with dedup
-    dedup = DedupStore()
-    if not dry_run and registry.deliveries:
-        for r in output.reminders:
-            remind_at_iso = r.remind_at.isoformat()
-            for delivery in registry.deliveries:
-                fp = reminder_fingerprint(r.event_id, remind_at_iso, delivery.name)
-                if dedup.was_sent(fp):
-                    logger.info(
-                        "Skipping duplicate: %s via %s", r.event_title, delivery.name
-                    )
-                    continue
-                try:
-                    recipient = config.user.phone_number if delivery.name == "sms" else config.user.email
-                    success = delivery.send(
-                        recipient=recipient,
-                        subject=f"Reminder: {r.event_title}",
-                        body=r.message,
-                    )
-                    if success:
-                        dedup.mark_sent(
-                            fp, r.event_id, remind_at_iso, delivery.name, r.message
-                        )
-                except Exception as e:
-                    logger.error("Delivery %s failed: %s", delivery.name, e)
-    dedup.cleanup_old()
-    dedup.close()

@@ -1,7 +1,8 @@
-"""Tests for delivery plugins — Twilio SMS and SendGrid email."""
+"""Tests for delivery plugins — Twilio SMS, SendGrid email, and SMS gateway."""
 
+import smtplib
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,6 +28,7 @@ sys.modules.setdefault("sendgrid.helpers.mail", _sendgrid_helpers_mail)
 
 from plugins.twilio_sms import TwilioSMSDelivery  # noqa: E402
 from plugins.sendgrid_email import SendGridEmailDelivery  # noqa: E402
+from plugins.sms_gateway import SMSGatewayDelivery  # noqa: E402
 
 
 class TestTwilioSMSDelivery:
@@ -125,6 +127,70 @@ class TestSendGridEmailDelivery:
     def test_registry_skips_when_config_missing(self):
         registry = PluginRegistry()
         registry.register(SendGridEmailDelivery, {})
+        assert len(registry.deliveries) == 0
+        assert len(registry._failed) == 1
+        assert "Missing config" in registry._failed[0][1]
+
+
+class TestSMSGatewayDelivery:
+    _config = {
+        "SMS_GATEWAY_DOMAIN": "txt.att.net",
+        "SMTP_HOST": "smtp.gmail.com",
+        "SMTP_PORT": "587",
+        "SMTP_USER": "user@gmail.com",
+        "SMTP_PASSWORD": "app-password",
+    }
+
+    @patch("plugins.sms_gateway.smtplib.SMTP")
+    def test_send_constructs_gateway_email_and_sends(self, mock_smtp_cls):
+        mock_server = MagicMock()
+        mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
+        mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        plugin = SMSGatewayDelivery()
+        plugin.initialize(self._config)
+
+        result = plugin.send("+15551234567", "Test Subject", "Test body")
+
+        assert result is True
+        mock_smtp_cls.assert_called_once_with("smtp.gmail.com", 587)
+        mock_server.starttls.assert_called_once()
+        mock_server.login.assert_called_once_with("user@gmail.com", "app-password")
+        mock_server.send_message.assert_called_once()
+        msg = mock_server.send_message.call_args[0][0]
+        assert msg["To"] == "5551234567@txt.att.net"
+        assert msg["From"] == "user@gmail.com"
+
+    @patch("plugins.sms_gateway.smtplib.SMTP")
+    def test_send_strips_plus_one_from_number(self, mock_smtp_cls):
+        mock_server = MagicMock()
+        mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
+        mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        plugin = SMSGatewayDelivery()
+        plugin.initialize(self._config)
+
+        plugin.send("+15551234567", "Subject", "Body")
+
+        msg = mock_server.send_message.call_args[0][0]
+        assert msg["To"] == "5551234567@txt.att.net"
+
+    @patch("plugins.sms_gateway.smtplib.SMTP")
+    def test_send_returns_false_on_smtp_error(self, mock_smtp_cls):
+        mock_server = MagicMock()
+        mock_server.send_message.side_effect = smtplib.SMTPException("fail")
+        mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
+        mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        plugin = SMSGatewayDelivery()
+        plugin.initialize(self._config)
+
+        result = plugin.send("+15551234567", "Subject", "Body")
+        assert result is False
+
+    def test_registry_skips_when_config_missing(self):
+        registry = PluginRegistry()
+        registry.register(SMSGatewayDelivery, {})
         assert len(registry.deliveries) == 0
         assert len(registry._failed) == 1
         assert "Missing config" in registry._failed[0][1]

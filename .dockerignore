@@ -1,0 +1,14 @@
+.env
+.git
+.gitignore
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+tests/
+*.db
+token.json
+credentials.json

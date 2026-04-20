@@ -12,7 +12,7 @@ class UserConfig:
     email: str = ""
     timezone: str = "America/Los_Angeles"
     schedule_cron: str = "0 6 * * *"
-    lookahead_hours: int = 48
+    lookahead_hours: int = 6
 
 
 @dataclass
