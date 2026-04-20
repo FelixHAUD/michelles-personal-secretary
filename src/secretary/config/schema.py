@@ -20,6 +20,11 @@ class SecretaryConfig:
     user: UserConfig = field(default_factory=UserConfig)
     gemini_api_key: str = ""
     google_credentials_path: str = "credentials.json"
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from_number: str = ""
+    sendgrid_api_key: str = ""
+    sendgrid_from_email: str = ""
     env: dict[str, str] = field(default_factory=dict)
 
     def merged_env(self) -> dict[str, str]:
@@ -29,4 +34,14 @@ class SecretaryConfig:
             merged["GOOGLE_CREDENTIALS_PATH"] = self.google_credentials_path
         if self.gemini_api_key:
             merged["GEMINI_API_KEY"] = self.gemini_api_key
+        if self.twilio_account_sid:
+            merged["TWILIO_ACCOUNT_SID"] = self.twilio_account_sid
+        if self.twilio_auth_token:
+            merged["TWILIO_AUTH_TOKEN"] = self.twilio_auth_token
+        if self.twilio_from_number:
+            merged["TWILIO_FROM_NUMBER"] = self.twilio_from_number
+        if self.sendgrid_api_key:
+            merged["SENDGRID_API_KEY"] = self.sendgrid_api_key
+        if self.sendgrid_from_email:
+            merged["SENDGRID_FROM_EMAIL"] = self.sendgrid_from_email
         return merged

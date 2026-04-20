@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from secretary.agent import Event, generate_reminders
 from secretary.config import SecretaryConfig
+from secretary.dedup import DedupStore, reminder_fingerprint
 from secretary.plugin import PluginRegistry
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ def run_pipeline(
         events=all_events,
         api_key=config.gemini_api_key,
         home_address=config.user.home_address,
+        registry=registry,
     )
 
     # Step 5: Run post-agent hooks
@@ -101,15 +103,30 @@ def run_pipeline(
     if not output.reminders and not output.conflicts:
         print("\nNo reminders or conflicts to report.")
 
-    # Step 7: Deliver (future — for now, console only)
+    # Step 7: Deliver with dedup
+    dedup = DedupStore()
     if not dry_run and registry.deliveries:
         for r in output.reminders:
+            remind_at_iso = r.remind_at.isoformat()
             for delivery in registry.deliveries:
+                fp = reminder_fingerprint(r.event_id, remind_at_iso, delivery.name)
+                if dedup.was_sent(fp):
+                    logger.info(
+                        "Skipping duplicate: %s via %s", r.event_title, delivery.name
+                    )
+                    continue
                 try:
-                    delivery.send(
-                        recipient=config.user.phone_number or config.user.email,
+                    recipient = config.user.phone_number if delivery.name == "sms" else config.user.email
+                    success = delivery.send(
+                        recipient=recipient,
                         subject=f"Reminder: {r.event_title}",
                         body=r.message,
                     )
+                    if success:
+                        dedup.mark_sent(
+                            fp, r.event_id, remind_at_iso, delivery.name, r.message
+                        )
                 except Exception as e:
                     logger.error("Delivery %s failed: %s", delivery.name, e)
+    dedup.cleanup_old()
+    dedup.close()

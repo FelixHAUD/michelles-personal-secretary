@@ -31,5 +31,10 @@ def load_config() -> SecretaryConfig:
         ),
         gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
         google_credentials_path=os.environ.get("GOOGLE_CREDENTIALS_PATH", "credentials.json"),
+        twilio_account_sid=os.environ.get("TWILIO_ACCOUNT_SID", ""),
+        twilio_auth_token=os.environ.get("TWILIO_AUTH_TOKEN", ""),
+        twilio_from_number=os.environ.get("TWILIO_FROM_NUMBER", ""),
+        sendgrid_api_key=os.environ.get("SENDGRID_API_KEY", ""),
+        sendgrid_from_email=os.environ.get("SENDGRID_FROM_EMAIL", ""),
         env=env,
     )
