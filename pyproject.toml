@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "michelles-personal-secretary"
+version = "0.1.0"
+description = "AI-powered personal secretary that sends smart reminders"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=1.0",
+    "google-api-python-client>=2.100",
+    "google-auth-oauthlib>=1.0",
+    "google-auth-httplib2>=0.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock",
+]
+
+[project.scripts]
+secretary = "secretary.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
