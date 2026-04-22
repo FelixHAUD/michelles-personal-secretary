@@ -292,11 +292,28 @@ def briefing_handler():
     else:
         schedule_text = "  Nothing on the calendar — enjoy your free day!"
 
+    # Study gaps — find windows > 1h between events
+    gap_lines = []
+    if len(events) >= 2:
+        for i in range(len(events) - 1):
+            gap_start = events[i].end.astimezone(tz)
+            gap_end = events[i + 1].start.astimezone(tz)
+            gap_hours = (gap_end - gap_start).total_seconds() / 3600
+            if gap_hours >= 1:
+                gap_lines.append(
+                    f"  {gap_start.strftime('%I:%M %p')} — {gap_end.strftime('%I:%M %p')} "
+                    f"({gap_hours:.0f}h free between {events[i].title} and {events[i+1].title})"
+                )
+
+    gap_text = ""
+    if gap_lines:
+        gap_text = "\n\nStudy Windows:\n" + "\n".join(gap_lines)
+
     body = (
         f"Good Morning, Michelle!\n\n"
         f"{affirmation}\n\n"
         f"Here's your {day_name}:\n\n"
-        f"{schedule_text}\n\n"
+        f"{schedule_text}{gap_text}\n\n"
         f"Weather: {weather}"
     )
 
@@ -385,6 +402,123 @@ def bedtime_handler():
             logger.error("Bedtime delivery via %s failed: %s", delivery.name, ex)
 
     return jsonify({"status": "ok", "tomorrow_first_event": events[0].title if events else None})
+
+
+@app.route("/email-summary", methods=["POST", "GET"])
+def email_summary_handler():
+    """Daily email digest — lists recent emails without Gemini."""
+    from secretary.config import load_config
+    from secretary.plugin import PluginRegistry, discover_plugins
+    from secretary.util.gmail_reader import fetch_recent_emails, format_email_digest
+    from secretary.util.log import setup_logging
+
+    setup_logging(verbose=False)
+    config = load_config()
+
+    registry = PluginRegistry()
+    for plugin_cls in discover_plugins():
+        registry.register(plugin_cls, config.merged_env())
+
+    emails = fetch_recent_emails(config.google_credentials_path, hours=24)
+    body = format_email_digest(emails)
+
+    for delivery in registry.deliveries:
+        try:
+            delivery.send(
+                recipient=config.user.email,
+                subject="Daily Email Summary",
+                body=body,
+            )
+            logger.info("Sent email summary via %s", delivery.name)
+        except Exception as ex:
+            logger.error("Email summary delivery via %s failed: %s", delivery.name, ex)
+
+    return jsonify({"status": "ok", "emails_found": len(emails)})
+
+
+@app.route("/weekly", methods=["POST", "GET"])
+def weekly_handler():
+    """Weekly digest — 7-day schedule overview. No Gemini, pure calendar math."""
+    from collections import defaultdict
+    from zoneinfo import ZoneInfo
+
+    from secretary.config import load_config
+    from secretary.config.schema import SecretaryConfig
+    from secretary.pipeline.runner import fetch_events
+    from secretary.plugin import PluginRegistry, discover_plugins
+    from secretary.util.log import setup_logging
+
+    setup_logging(verbose=False)
+    config = load_config()
+
+    registry = PluginRegistry()
+    for plugin_cls in discover_plugins():
+        registry.register(plugin_cls, config.merged_env())
+
+    tz = ZoneInfo(config.user.timezone)
+
+    # Fetch next 7 days of events
+    week_config = SecretaryConfig(
+        user=config.user,
+        gemini_api_key=config.gemini_api_key,
+        google_credentials_path=config.google_credentials_path,
+        env=config.env,
+    )
+    week_config.user.lookahead_hours = 168  # 7 days
+    events = fetch_events(week_config, registry)
+    events.sort(key=lambda e: e.start)
+
+    # Group by day
+    by_day: dict[str, list] = defaultdict(list)
+    for e in events:
+        day_key = e.start.astimezone(tz).strftime("%A, %b %d")
+        by_day[day_key].append(e)
+
+    # Build digest
+    lines = ["Here's your week ahead:\n"]
+
+    if not events:
+        lines.append("Nothing scheduled — wide open week!")
+    else:
+        busiest_day = max(by_day.items(), key=lambda x: len(x[1]))
+        lightest_day = min(by_day.items(), key=lambda x: len(x[1]))
+
+        for day_name, day_events in by_day.items():
+            lines.append(f"{day_name} ({len(day_events)} event{'s' if len(day_events) != 1 else ''}):")
+            for e in day_events:
+                start_local = e.start.astimezone(tz)
+                loc = f" @ {e.location}" if e.location else ""
+                lines.append(f"  {start_local.strftime('%I:%M %p')} — {e.title}{loc}")
+            lines.append("")
+
+        lines.append(f"Busiest day: {busiest_day[0]} ({len(busiest_day[1])} events)")
+        if len(lightest_day[1]) < len(busiest_day[1]):
+            lines.append(f"Lightest day: {lightest_day[0]} ({len(lightest_day[1])} events)")
+
+        # Find days with no events in the next 7 days
+        now_local = datetime.now(tz)
+        all_days = set()
+        for i in range(7):
+            d = now_local + timedelta(days=i)
+            all_days.add(d.strftime("%A, %b %d"))
+        free_days = all_days - set(by_day.keys())
+        if free_days:
+            lines.append(f"Free days: {', '.join(sorted(free_days))}")
+
+    body = "\n".join(lines)
+
+    for delivery in registry.deliveries:
+        try:
+            delivery.send(
+                recipient=config.user.email,
+                subject="Your Week Ahead",
+                body=body,
+            )
+            logger.info("Sent weekly digest via %s", delivery.name)
+        except Exception as ex:
+            logger.error("Weekly digest delivery via %s failed: %s", delivery.name, ex)
+
+    return jsonify({"status": "ok", "events_this_week": len(events), "days_with_events": len(by_day)})
 
 
 @app.route("/health", methods=["GET"])

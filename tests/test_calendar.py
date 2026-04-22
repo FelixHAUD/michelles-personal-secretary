@@ -68,7 +68,7 @@ class TestNormalizeEvent:
 
 class TestGoogleCalendarSource:
     @patch("plugins.google_calendar.build")
-    @patch("plugins.google_calendar._get_credentials")
+    @patch("plugins.google_calendar.get_credentials")
     def test_fetch_returns_normalized_events(
         self, mock_creds, mock_build, mock_calendar_response
     ):
@@ -90,7 +90,7 @@ class TestGoogleCalendarSource:
         assert events[2]["title"] == "All Day Event"
 
     @patch("plugins.google_calendar.build")
-    @patch("plugins.google_calendar._get_credentials")
+    @patch("plugins.google_calendar.get_credentials")
     def test_fetch_handles_empty_calendar(self, mock_creds, mock_build):
         mock_service = MagicMock()
         mock_build.return_value = mock_service
