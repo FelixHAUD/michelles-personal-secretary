@@ -37,20 +37,18 @@ class WeatherTool(Tool):
         self._lat = float(config.get("WEATHER_LAT", DEFAULT_LAT))
         self._lon = float(config.get("WEATHER_LON", DEFAULT_LON))
 
-    def tool_declarations(self) -> list[dict]:
-        return [
-            {
-                "name": "get_weather",
-                "description": (
-                    "Get current weather conditions and today's forecast. "
-                    "Returns temperature, conditions, rain chance, and wind."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                },
-            }
-        ]
+    def get_tool_definition(self) -> dict:
+        return {
+            "name": "get_weather",
+            "description": (
+                "Get current weather conditions and today's forecast. "
+                "Returns temperature, conditions, rain chance, and wind."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {},
+            },
+        }
 
     def execute(self, args: dict) -> str:
         return get_weather(self._lat, self._lon)
