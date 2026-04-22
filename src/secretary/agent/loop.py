@@ -8,6 +8,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from google import genai
 from google.genai import types
@@ -52,11 +53,14 @@ def generate_reminders(
     api_key: str,
     home_address: str,
     registry: PluginRegistry | None = None,
+    user_timezone: str = "America/Los_Angeles",
 ) -> AgentOutput:
     """Send all events to Gemini, optionally with tool-use, get structured reminders back."""
     client = genai.Client(api_key=api_key)
 
-    now = datetime.now(timezone.utc)
+    # Use the user's local timezone so Gemini can compare times correctly
+    # with event timestamps (which come from Google Calendar in local time).
+    now = datetime.now(ZoneInfo(user_timezone))
     system = build_system_prompt(home_address, now.isoformat())
     user_message = format_events(events)
 

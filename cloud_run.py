@@ -123,6 +123,14 @@ def run_handler():
             logger.info("Scheduled task %s for %s at %s", task_name, r.event_title, r.remind_at)
             scheduled += 1
 
+    # Always clean up old reminder emails, even if no new reminders this cycle
+    for delivery in registry.deliveries:
+        if hasattr(delivery, "cleanup"):
+            try:
+                delivery.cleanup(config.user.email)
+            except Exception as e:
+                logger.warning("Cleanup failed for %s: %s", delivery.name, e)
+
     return jsonify({
         "status": "ok",
         "reminders_analyzed": len(output.reminders),

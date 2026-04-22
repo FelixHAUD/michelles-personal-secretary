@@ -41,7 +41,7 @@ class GmailDelivery(Delivery):
 
     def send(self, recipient: str, subject: str, body: str) -> bool:
         # Clean up old reminders first
-        self._cleanup_old_reminders(recipient)
+        self.cleanup(recipient)
 
         msg = MIMEText(body)
         msg["From"] = self._smtp_user
@@ -60,7 +60,7 @@ class GmailDelivery(Delivery):
             logger.exception("Failed to send email to %s", recipient)
             return False
 
-    def _cleanup_old_reminders(self, recipient: str) -> None:
+    def cleanup(self, recipient: str) -> None:
         """Delete reminder emails older than TTL from the recipient's inbox via IMAP."""
         try:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=self._ttl_hours)

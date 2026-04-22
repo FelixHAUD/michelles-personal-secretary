@@ -78,6 +78,7 @@ def run_pipeline(
         api_key=config.gemini_api_key,
         home_address=config.user.home_address,
         registry=registry,
+        user_timezone=config.user.timezone,
     )
 
     # Step 5: Run post-agent hooks
