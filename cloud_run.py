@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, request
@@ -215,6 +215,176 @@ def deliver_handler():
     logger.info("Delivered: %s", reminder.event_title)
 
     return jsonify({"status": "delivered", "event_title": reminder.event_title})
+
+
+AFFIRMATIONS = [
+    "You're doing amazing — one step at a time.",
+    "Today is full of possibilities. You've got this!",
+    "You are capable of incredible things.",
+    "Be proud of how far you've come.",
+    "You're stronger than you think.",
+    "Small progress is still progress. Keep going!",
+    "Believe in yourself — you've earned everything you have.",
+    "Today is a new chance to be the best version of you.",
+    "Hard work always pays off. You're proof of that.",
+    "The world is better because you're in it.",
+    "Trust the process. Great things take time.",
+    "You are enough, exactly as you are.",
+    "Every expert was once a beginner. Keep learning!",
+    "Your potential is limitless.",
+    "Breathe. You're exactly where you need to be.",
+]
+
+
+@app.route("/briefing", methods=["POST", "GET"])
+def briefing_handler():
+    """Morning briefing: today's schedule, weather, and an affirmation."""
+    import random
+    from zoneinfo import ZoneInfo
+
+    from secretary.config import load_config
+    from secretary.pipeline.runner import fetch_events
+    from secretary.plugin import PluginRegistry, discover_plugins
+    from secretary.util.log import setup_logging
+
+    setup_logging(verbose=False)
+    config = load_config()
+
+    registry = PluginRegistry()
+    for plugin_cls in discover_plugins():
+        registry.register(plugin_cls, config.merged_env())
+
+    tz = ZoneInfo(config.user.timezone)
+    now_local = datetime.now(tz)
+    day_name = now_local.strftime("%A, %B %d")
+
+    # Fetch today's events (use 18h lookahead for full day view)
+    from secretary.config.schema import SecretaryConfig
+    day_config = SecretaryConfig(
+        user=config.user,
+        gemini_api_key=config.gemini_api_key,
+        google_credentials_path=config.google_credentials_path,
+        env=config.env,
+    )
+    day_config.user.lookahead_hours = 18
+    events = fetch_events(day_config, registry)
+    events.sort(key=lambda e: e.start)
+
+    # Weather
+    try:
+        from plugins.weather import get_weather
+        weather = get_weather()
+    except Exception:
+        weather = "Weather unavailable."
+
+    # Build briefing
+    affirmation = random.choice(AFFIRMATIONS)
+
+    if events:
+        schedule_lines = []
+        for e in events:
+            start_local = e.start.astimezone(tz)
+            loc = f" @ {e.location}" if e.location else ""
+            schedule_lines.append(
+                f"  {start_local.strftime('%I:%M %p')} — {e.title}{loc}"
+            )
+        schedule_text = "\n".join(schedule_lines)
+    else:
+        schedule_text = "  Nothing on the calendar — enjoy your free day!"
+
+    body = (
+        f"Good Morning, Michelle!\n\n"
+        f"{affirmation}\n\n"
+        f"Here's your {day_name}:\n\n"
+        f"{schedule_text}\n\n"
+        f"Weather: {weather}"
+    )
+
+    for delivery in registry.deliveries:
+        try:
+            delivery.send(
+                recipient=config.user.email,
+                subject="Good Morning, Michelle!",
+                body=body,
+            )
+            logger.info("Sent morning briefing via %s", delivery.name)
+        except Exception as ex:
+            logger.error("Briefing delivery via %s failed: %s", delivery.name, ex)
+
+    return jsonify({
+        "status": "ok",
+        "events_today": len(events),
+        "weather": weather,
+    })
+
+
+@app.route("/bedtime", methods=["POST", "GET"])
+def bedtime_handler():
+    """11 PM bedtime reminder."""
+    import random
+    from zoneinfo import ZoneInfo
+
+    from secretary.config import load_config
+    from secretary.pipeline.runner import fetch_events
+    from secretary.plugin import PluginRegistry, discover_plugins
+    from secretary.util.log import setup_logging
+
+    setup_logging(verbose=False)
+    config = load_config()
+
+    registry = PluginRegistry()
+    for plugin_cls in discover_plugins():
+        registry.register(plugin_cls, config.merged_env())
+
+    tz = ZoneInfo(config.user.timezone)
+    tomorrow = (datetime.now(tz) + timedelta(days=1))
+
+    # Peek at tomorrow's first event
+    from secretary.config.schema import SecretaryConfig
+    tmrw_config = SecretaryConfig(
+        user=config.user,
+        gemini_api_key=config.gemini_api_key,
+        google_credentials_path=config.google_credentials_path,
+        env=config.env,
+    )
+    tmrw_config.user.lookahead_hours = 18
+    events = fetch_events(tmrw_config, registry)
+    events.sort(key=lambda e: e.start)
+
+    if events:
+        first = events[0]
+        first_time = first.start.astimezone(tz).strftime("%I:%M %p")
+        tomorrow_peek = f"Your first thing tomorrow is {first.title} at {first_time}."
+    else:
+        tomorrow_peek = "Nothing on the calendar tomorrow morning — sleep in if you can!"
+
+    tips = [
+        "Put your phone on Do Not Disturb.",
+        "Try some deep breaths — in for 4, hold for 7, out for 8.",
+        "No screens for the next 30 min if you can!",
+        "A glass of water now will help you feel great in the morning.",
+        "Write down one thing you're grateful for today.",
+    ]
+
+    body = (
+        f"Hey Michelle, it's time to wind down.\n\n"
+        f"{tomorrow_peek}\n\n"
+        f"Tip: {random.choice(tips)}\n\n"
+        f"Get some rest — you deserve it. Goodnight!"
+    )
+
+    for delivery in registry.deliveries:
+        try:
+            delivery.send(
+                recipient=config.user.email,
+                subject="Bedtime Reminder",
+                body=body,
+            )
+            logger.info("Sent bedtime reminder via %s", delivery.name)
+        except Exception as ex:
+            logger.error("Bedtime delivery via %s failed: %s", delivery.name, ex)
+
+    return jsonify({"status": "ok", "tomorrow_first_event": events[0].title if events else None})
 
 
 @app.route("/health", methods=["GET"])
