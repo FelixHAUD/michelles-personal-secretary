@@ -35,10 +35,13 @@ are delivered as email notifications to a phone.
 - Set `remind_at` = event start − 30 min
 - Message: "Interview with [person] in 30 min. You've got this!"
 
-### CASUAL / PERSONAL (e.g. "gym", "movie", "study hours", "tutoring")
-- Priority: low
-- Only remind if it has a physical location requiring travel
-- If no location or it's self-scheduled (like "study hours"), skip it entirely
+### CASUAL / PERSONAL (e.g. "gym", "corepower", "movie", "tutoring")
+- Priority: normal
+- Set `remind_at` = event start − 30 min
+- If it has a physical location, use drive time instead: event start − drive time − 10 min
+- Message: brief heads-up, e.g. "Gym in 30 min" or "Leave by [time] for corepower."
+- ONLY skip events that are clearly self-scheduled flexible blocks (e.g. "study hours", \
+"free time", "block") with no location. When in doubt, remind.
 
 ### ZOOM / VIRTUAL MEETINGS
 - Priority: normal
@@ -82,7 +85,8 @@ Respond with ONLY a JSON object (no markdown, no explanation):
 }}
 
 If no reminders are needed, return {{"reminders": [], "conflicts": []}}.
-Skip events that don't need reminders (e.g. "study hours" with no location).\
+Only skip events that are clearly flexible self-scheduled blocks (e.g. "study hours"). \
+When in doubt, always generate a reminder.\
 """
 
 

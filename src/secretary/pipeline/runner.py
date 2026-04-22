@@ -14,21 +14,14 @@ from secretary.plugin import PluginRegistry
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(
+def fetch_events(
     config: SecretaryConfig,
     registry: PluginRegistry,
-    dry_run: bool = False,
-) -> AgentOutput:
-    """Run the full pipeline: fetch -> agent -> print/deliver.
-
-    Returns the AgentOutput so callers (e.g. the scheduler) can schedule
-    individual reminder deliveries at their remind_at times.
-    """
-
+) -> list[Event]:
+    """Fetch events from all data sources (error-isolated per source)."""
     now = datetime.now(timezone.utc)
     end = now + timedelta(hours=config.user.lookahead_hours)
 
-    # Step 1: Fetch events from all data sources (error-isolated)
     all_events: list[Event] = []
     for source in registry.data_sources:
         try:
@@ -48,6 +41,23 @@ def run_pipeline(
             logger.info("%s: fetched %d events", source.name, len(raw_events))
         except Exception as e:
             logger.error("%s failed: %s", source.name, e)
+
+    return all_events
+
+
+def run_pipeline(
+    config: SecretaryConfig,
+    registry: PluginRegistry,
+    dry_run: bool = False,
+    events: list[Event] | None = None,
+) -> AgentOutput:
+    """Run the full pipeline: fetch -> agent -> print/deliver.
+
+    Returns the AgentOutput so callers (e.g. the scheduler) can schedule
+    individual reminder deliveries at their remind_at times.
+    """
+
+    all_events = events if events is not None else fetch_events(config, registry)
 
     print(f"Found {len(all_events)} upcoming events.\n")
 

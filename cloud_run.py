@@ -80,11 +80,44 @@ def _schedule_task(reminder_payload: dict, schedule_time: datetime) -> str:
     return created.name
 
 
+def _send_fallback_email(config, registry, events, error: str) -> bool:
+    """When Gemini fails, send a plain event summary so Michelle always gets something."""
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(config.user.timezone)
+    lines = ["Your AI secretary couldn't analyze events right now, "
+             "but here's what's coming up:\n"]
+    for e in sorted(events, key=lambda x: x.start):
+        start_local = e.start.astimezone(tz)
+        loc = f" @ {e.location}" if e.location else ""
+        lines.append(f"  {start_local.strftime('%I:%M %p')} - {e.title}{loc}")
+
+    lines.append(f"\n(AI analysis failed: {error[:100]})")
+    body = "\n".join(lines)
+
+    for delivery in registry.deliveries:
+        try:
+            delivery.send(
+                recipient=config.user.email,
+                subject="Your upcoming events",
+                body=body,
+            )
+            logger.info("Sent fallback event summary via %s", delivery.name)
+            return True
+        except Exception as ex:
+            logger.error("Fallback delivery via %s failed: %s", delivery.name, ex)
+    return False
+
+
 @app.route("/run", methods=["POST", "GET"])
 def run_handler():
     """Run the pipeline: fetch events, analyze with Gemini, schedule timed delivery."""
     from secretary.config import load_config
-    from secretary.pipeline.runner import deliver_reminder, run_pipeline
+    from secretary.pipeline.runner import (
+        deliver_reminder,
+        fetch_events,
+        run_pipeline,
+    )
     from secretary.plugin import PluginRegistry, discover_plugins
     from secretary.util.log import setup_logging
 
@@ -95,12 +128,25 @@ def run_handler():
     for plugin_cls in discover_plugins():
         registry.register(plugin_cls, config.merged_env())
 
-    # Analyze only — don't deliver yet
+    # Fetch events first so we can fall back if Gemini fails
+    events = fetch_events(config, registry)
+
+    # Analyze with Gemini — pass pre-fetched events
     try:
-        output = run_pipeline(config=config, registry=registry, dry_run=True)
+        output = run_pipeline(
+            config=config, registry=registry, dry_run=True, events=events,
+        )
     except Exception as e:
         logger.error("Pipeline failed: %s", e)
-        return jsonify({"status": "error", "error": str(e)}), 502
+        fallback_sent = False
+        if events:
+            fallback_sent = _send_fallback_email(config, registry, events, str(e))
+        return jsonify({
+            "status": "fallback" if fallback_sent else "error",
+            "error": str(e),
+            "fallback_sent": fallback_sent,
+            "events_found": len(events),
+        }), 200 if fallback_sent else 502
 
     now = datetime.now(timezone.utc)
     scheduled = 0
@@ -128,8 +174,8 @@ def run_handler():
         if hasattr(delivery, "cleanup"):
             try:
                 delivery.cleanup(config.user.email)
-            except Exception as e:
-                logger.warning("Cleanup failed for %s: %s", delivery.name, e)
+            except Exception as ex:
+                logger.warning("Cleanup failed for %s: %s", delivery.name, ex)
 
     return jsonify({
         "status": "ok",

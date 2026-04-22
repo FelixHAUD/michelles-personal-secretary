@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import webbrowser
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,8 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+
+logger = logging.getLogger(__name__)
 
 from secretary.plugin import ConfigRequirement, DataSource
 
@@ -60,6 +63,7 @@ def _get_credentials(credentials_path: str) -> Credentials:
 
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
+        _persist_token_to_secret_manager(creds)
     elif not creds or not creds.valid:
         TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -78,6 +82,23 @@ def _get_credentials(credentials_path: str) -> Credentials:
     TOKEN_PATH.write_text(creds.to_json())
 
     return creds
+
+
+def _persist_token_to_secret_manager(creds: Credentials) -> None:
+    """Write the refreshed token back to Secret Manager (cloud only)."""
+    secret_name = os.environ.get("GOOGLE_TOKEN_SECRET")
+    if not secret_name:
+        return  # Not running in cloud, skip
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        client.add_secret_version(
+            parent=secret_name,
+            payload=secretmanager.SecretPayload(data=creds.to_json().encode("utf-8")),
+        )
+        logger.info("Persisted refreshed OAuth token to Secret Manager")
+    except Exception as e:
+        logger.warning("Failed to persist token to Secret Manager: %s", e)
 
 
 def _normalize_event(item: dict) -> dict:
