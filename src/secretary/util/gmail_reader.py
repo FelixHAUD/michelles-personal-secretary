@@ -26,15 +26,18 @@ class EmailSummary:
 def fetch_recent_emails(
     credentials_path: str,
     hours: int = 24,
-    max_results: int = 20,
+    max_results: int = 10,
 ) -> list[EmailSummary]:
     """Fetch recent emails from Gmail. No Gemini — just metadata."""
     try:
         creds = get_credentials(credentials_path)
         service = build("gmail", "v1", credentials=creds)
 
-        # Search for recent emails, skip promotions/social/spam
-        query = f"newer_than:{hours}h -category:promotions -category:social -category:spam"
+        # Only Primary inbox, unread, skip self-sent reminders
+        query = (
+            f"newer_than:{hours}h is:unread category:primary "
+            f"-from:michellenguyen166@gmail.com"
+        )
 
         results = (
             service.users()
@@ -84,20 +87,12 @@ def fetch_recent_emails(
 def format_email_digest(emails: list[EmailSummary]) -> str:
     """Format emails into a readable digest string."""
     if not emails:
-        return "No new emails in the last 24 hours. Inbox zero!"
+        return "No important unread emails. Inbox looking clean!"
 
-    lines = [f"You have {len(emails)} recent email(s):\n"]
-    for i, em in enumerate(emails, 1):
-        unread = "UNREAD" in em.labels
-        marker = "* " if unread else "  "
-        lines.append(f"{marker}{em.sender}")
+    lines = [f"{len(emails)} email(s) that need your attention:\n"]
+    for em in emails:
+        lines.append(f"{em.sender}")
         lines.append(f"  {em.subject}")
-        if em.snippet:
-            lines.append(f"  {em.snippet[:100]}...")
         lines.append("")
-
-    unread_count = sum(1 for e in emails if "UNREAD" in e.labels)
-    if unread_count:
-        lines.append(f"{unread_count} unread.")
 
     return "\n".join(lines)
