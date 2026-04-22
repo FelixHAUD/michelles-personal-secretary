@@ -1,8 +1,8 @@
 # Michelle's Personal Secretary
 
-AI-powered personal secretary that fetches events from Google Calendar and Canvas LMS, analyzes them with Gemini, and sends smart reminders via Gmail.
+AI-powered personal secretary that fetches events from Google Calendar and Canvas LMS, analyzes them with Gemini, and delivers smart reminders to Discord.
 
-**How it works:** fetch events → Gemini analyzes with tool-use (e.g. Google Maps drive time) → generates prioritized reminders → delivers via Gmail with timed Cloud Tasks delivery and IMAP auto-cleanup.
+**How it works:** fetch events → Gemini analyzes with tool-use (e.g. drive time, weather) → generates prioritized reminders → delivers via Discord with timed Cloud Tasks delivery.
 
 ## Prerequisites
 
@@ -14,11 +14,32 @@ Optional integrations (the app works without these — plugins auto-skip if unco
 
 | Service | What it does |
 |---------|-------------|
+| Discord Webhook | Styled reminder embeds to a Discord channel |
+| Open-Meteo Weather | Weather in briefings and departure alerts (free, no API key) |
 | Twilio | SMS reminders |
 | SMS Gateway | Email account (Gmail, etc.) — Free SMS via carrier email gateway |
 | SendGrid | Email reminders |
 | Google Maps | Drive time estimates in reminders |
 | Canvas LMS | Assignment deadline reminders |
+
+## Features
+
+- Smart departure reminders with drive time + weather
+- Morning briefing at 7 AM (schedule, weather, affirmation, study gaps)
+- Gmail inbox digest at 8 AM (unread primary emails only)
+- Weekly schedule overview (Sunday evening)
+- Bedtime reminder at 11 PM with tomorrow preview
+- Timed delivery via Cloud Tasks (reminders arrive at the right moment)
+- Discord delivery with styled color-coded embeds
+- Gemini fallback (plain event list when AI is unavailable)
+
+## Google OAuth Setup
+
+1. Create OAuth credentials in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) and download as `credentials.json`.
+2. Enable the **Google Calendar API** and **Gmail API** (read-only) for your project.
+3. On first run, a browser window opens for OAuth consent (Calendar + Gmail read access).
+4. The resulting token is saved at `~/.secretary/token.json` for future runs.
+5. For cloud deployment, the token is stored in **Secret Manager** (see Cloud Deployment below).
 
 ## Quick Start
 
@@ -53,6 +74,7 @@ All settings live in `.env` (created by `secretary setup`, or copy `.env.example
 |----------|----------|---------|-------------|
 | `GEMINI_API_KEY` | Yes | — | Free at https://aistudio.google.com/apikey |
 | `GOOGLE_CREDENTIALS_PATH` | Yes | `credentials.json` | Path to Google OAuth credentials JSON |
+| `DISCORD_WEBHOOK_URL` | No | — | Discord webhook URL for delivery |
 | `HOME_ADDRESS` | No | — | Home address for drive time calculations |
 | `PHONE_NUMBER` | No | — | Phone number for SMS reminders |
 | `EMAIL` | No | — | Email for email reminders |
@@ -81,7 +103,9 @@ The app uses a plugin system. Drop a `.py` file in `plugins/` and it auto-regist
 - `google_calendar.py` — DataSource: fetches calendar events
 - `canvas_lms.py` — DataSource: fetches assignment deadlines
 - `google_maps.py` — Tool: drive time estimates (called by Gemini during analysis)
-- `gmail_delivery.py` — Delivery: sends email reminders via Gmail SMTP with IMAP auto-cleanup
+- `weather.py` — Tool: weather conditions and forecast (Open-Meteo, free)
+- `discord_delivery.py` — Delivery: styled Discord embeds via webhook
+- `gmail_delivery.py` — Delivery: email reminders via Gmail SMTP with IMAP auto-cleanup (optional, Discord is primary)
 - `twilio_sms.py` — Delivery: sends SMS reminders
 - `sms_gateway.py` — Delivery: free SMS via email-to-SMS carrier gateway (deprecated)
 - `sendgrid_email.py` — Delivery: sends email reminders via SendGrid
@@ -110,20 +134,33 @@ Deployed to **Google Cloud Run** with timed reminder delivery via Cloud Tasks.
 | Service URL | `https://secretary-1070885118078.us-central1.run.app` |
 | GCP project | `gen-lang-client-0243595792` |
 | Region | `us-central1` |
-| Cloud Scheduler job | `secretary-trigger` — POSTs to `/run` every 6 hours (midnight, 6 AM, noon, 6 PM PT) |
 | Cloud Tasks queue | `reminder-delivery` |
 
 ### Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/run` | Full pipeline: fetch events → Gemini analysis → schedule Cloud Tasks at each reminder's `remind_at` time |
-| `POST` | `/deliver` | Deliver a single reminder (called by Cloud Tasks at the scheduled time) |
+| `POST` | `/run` | AI-analyzed reminders via Gemini → schedules Cloud Tasks |
+| `POST` | `/deliver` | Delivers a single reminder (called by Cloud Tasks) |
+| `POST` | `/briefing` | Morning briefing: schedule + weather + study gaps + affirmation |
+| `POST` | `/email-summary` | Unread primary email digest |
+| `POST` | `/weekly` | 7-day schedule overview |
+| `POST` | `/bedtime` | Bedtime reminder with tomorrow preview |
 | `GET` | `/health` | Health check |
+
+### Cloud Scheduler jobs
+
+| Job | Schedule | Endpoint |
+|-----|----------|----------|
+| `secretary-trigger` | Every 6 hours | `/run` |
+| `morning-briefing` | 7 AM PT daily | `/briefing` |
+| `email-summary` | 8 AM PT daily | `/email-summary` |
+| `bedtime-reminder` | 11 PM PT daily | `/bedtime` |
+| `weekly-digest` | Sunday 8 PM PT | `/weekly` |
 
 ### How timed delivery works
 
-`/run` analyzes upcoming events with Gemini, which decides when each reminder should fire (e.g., 30 min before class, drive-time minus buffer before work). For each reminder, a Cloud Task is scheduled at that `remind_at` time. When the task fires, it POSTs to `/deliver` to send the actual email.
+`/run` analyzes upcoming events with Gemini, which decides when each reminder should fire (e.g., 30 min before class, drive-time minus buffer before work). For each reminder, a Cloud Task is scheduled at that `remind_at` time. When the task fires, it POSTs to `/deliver` to send the reminder.
 
 ### Security and secrets
 
@@ -137,6 +174,7 @@ Deployed to **Google Cloud Run** with timed reminder delivery via Cloud Tasks.
 |----------|---------|
 | `PLUGINS_DIR` | Plugin discovery path (set to `/app/plugins` in Docker) |
 | `GOOGLE_TOKEN_PATH` | OAuth token path (cloud writes secret to `/tmp/secrets/token.json`) |
+| `GOOGLE_TOKEN_SECRET` | Secret Manager path for OAuth token persistence (cloud only) |
 
 ### Notes
 
