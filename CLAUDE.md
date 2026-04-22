@@ -29,6 +29,7 @@ AI secretary for Michelle. Fetches Google Calendar events (and Canvas LMS assign
 - **Read-only**: never modify external calendar/Canvas/Gmail data.
 - **Current time passed to Gemini in user's local timezone** (not UTC) to prevent timezone mismatch in reminder scheduling.
 - **Prompt tuning**: casual events (gym, tutoring) get reminders. Only truly flexible blocks (study hours) are skipped.
+- **Drive time origin**: currently always HOME_ADDRESS. Planned: infer from previous event's location (prompt change only, no new APIs). Future option: iPhone Shortcuts webhook for real-time GPS → Firestore/Cloud Storage.
 - **IMAP cleanup runs at end of every /run cycle** regardless of reminder count.
 - **SMS gateways are dead**: AT&T killed email-to-SMS gateways June 2025. The `sms_gateway.py` plugin exists but is unused. Discord is the active delivery channel.
 

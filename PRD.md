@@ -168,10 +168,13 @@ Only 1 of 5 scheduled jobs uses the Gemini API, minimizing free-tier quota consu
 - **Single user**: Designed for Michelle. Multi-user support would require per-user config and OAuth tokens.
 - **No inbound interaction**: Michelle can't reply to Discord messages to ask questions or give commands. The system is outbound-only.
 - **Canvas LMS disabled**: Plugin exists but needs Michelle's Canvas API token and UCI's Canvas URL.
+- **Static drive time origin**: All drive time calculations assume Michelle is at home. She may be on campus or elsewhere.
 
 ## Future Opportunities
 
 ### Near-term (single plugin each)
+- **Smart drive time origin**: Infer Michelle's current location from her previous event's location instead of always assuming home. Pure prompt change — Gemini already has the full event list. Zero new APIs.
+- **iPhone Shortcuts location webhook**: Michelle sets up a one-time iOS Shortcut that POSTs GPS coordinates to a `/location` endpoint. System stores latest coords (Firestore/Cloud Storage) and uses for drive time. Most accurate option.
 - **Canvas LMS assignments**: "Physics problem set due in 14 hours" — plugin already built, just needs credentials
 - **Commute alternatives**: Add transit/bus timing alongside drive time — minor tweak to Google Maps plugin
 - **Study block suggestions**: Gemini suggests what to study in free gaps based on upcoming exams/deadlines
